@@ -1,10 +1,21 @@
 package com.project;
 
 import javafx.fxml.FXML;
-import javafx.scene.control.Button;
 import javafx.scene.control.ChoiceBox;
-import javafx.scene.text.Text;
-import javafx.event.ActionEvent;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListView;
+import java.io.InputStream;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import org.json.JSONObject;
+import org.json.JSONArray;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
 
 public class ControllerDesktop {
 
@@ -12,14 +23,237 @@ public class ControllerDesktop {
     private ChoiceBox<String> choiceBox;
 
     @FXML
-    public void initialize() {
-        choiceBox.getItems().addAll("Consolas", "Juegos", "Personajes");
-        choiceBox.setValue("Consolas");
+    private ListView<HBox> listView;
+
+    @FXML
+    private ImageView imageView; // ImageView del VBox de la derecha
+
+    @FXML
+    private Label titleLabel; // Label para el título
+
+    @FXML
+    private Label descriptionLabel; // Label para la descripción
+
+    @FXML
+    private Label additionalInfoLabel; // Label para información adicional
+
+    // Clase interna para almacenar los datos de cada elemento
+    public static class Item {
+        String name;
+        String imagePath;
+        String description;
+        String additionalInfo; // Para datos adicionales como "data", "procesador", "color", etc.
+
+        public Item(String name, String imagePath, String description, String additionalInfo) {
+            this.name = name;
+            this.imagePath = imagePath;
+            this.description = description;
+            this.additionalInfo = additionalInfo; // Guardar información adicional
+        }
     }
 
+    // Lista de items
+    private ObservableList<Item> itemList = FXCollections.observableArrayList();
+
+    // Método que se llama al inicializar el controlador
+    @FXML
+    public void initialize() {
+        // Agregar opciones al ChoiceBox
+        choiceBox.getItems().addAll("Consolas", "Juegos", "Personajes");
+        choiceBox.setValue("Consolas");
+
+        // Cargar la información inicial para la opción seleccionada
+        loadJSONData("Consolas");
+
+        // Agregar listener para cuando cambie la selección
+        choiceBox.setOnAction(event -> handleChoiceBoxAction());
+
+        // Listener para la selección de la ListView
+        listView.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
+            if (newSelection != null) {
+                int selectedIndex = listView.getSelectionModel().getSelectedIndex();
+                // Obtener el item seleccionado
+                Item selectedItem = itemList.get(selectedIndex);
+                // Actualizar el VBox de la derecha con los datos del item
+                try {
+                    updateRightVBox(selectedItem);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+    }
+
+    // Método que maneja la acción del ChoiceBox cuando se selecciona una opción
     @FXML
     private void handleChoiceBoxAction() {
         String selected = choiceBox.getValue();
-        System.out.println("Seleccionado: " + selected);
+        loadJSONData(selected);
+    }
+
+    private void loadJSONData(String category) {
+        String jsonFilePath = getJSONFilePathForCategory(category);
+        if (jsonFilePath == null) {
+            return;
+        }
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(jsonFilePath))) {
+            StringBuilder jsonContent = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                jsonContent.append(line);
+            }
+
+            // Parsear el contenido del JSON como una lista de objetos
+            JSONArray jsonArray = new JSONArray(jsonContent.toString());
+
+            // Crear una lista observable para los HBox
+            ObservableList<HBox> items = FXCollections.observableArrayList();
+            itemList.clear(); // Limpiar la lista anterior
+
+            for (int i = 0; i < jsonArray.length(); i++) {
+                JSONObject jsonObject = jsonArray.getJSONObject(i);
+
+                // Obtener los campos "nom", "imatge" y "descripcio" del JSON
+                String name = jsonObject.getString("nom");
+                String imagePath = "assets/images/" + jsonObject.getString("imatge"); // Cambia aquí
+                String description = "";
+
+                // Determinar el campo adicional basado en la categoría
+                String additionalInfo = "";
+                switch (category) {
+                    case "Consolas":
+                        description = "Lanzamiento: " + jsonObject.getString("data");
+                        additionalInfo = "Procesador: " + jsonObject.getString("procesador") + "\n" +
+                                "Color: " + jsonObject.getString("color") + "\n" +
+                                "Unidades vendidas: " + jsonObject.getInt("venudes");
+                        break;
+                    case "Juegos":
+                        description = jsonObject.getString("descripcio");
+                        additionalInfo = "Año: " + jsonObject.getInt("any") + "\n" +
+                                "Tipo: " + jsonObject.getString("tipus");
+                        break;
+                    case "Personajes":
+                        additionalInfo = "Color: " + jsonObject.getString("color") + "\n" +
+                                "Juego: " + jsonObject.getString("nom_del_videojoc");
+                        break;
+                }
+
+                // Crear un item y añadirlo a la lista
+                Item item = new Item(name, imagePath, description, additionalInfo);
+                itemList.add(item);
+
+                // Crear un HBox para contener la imagen y el texto
+                HBox hBox = new HBox(10); // 10 es el espaciado entre imagen y texto
+
+                // Crear el ImageView y cargar la imagen
+                ImageView imageView = new ImageView();
+                try (InputStream imageStream = getClass().getClassLoader().getResourceAsStream(imagePath)) {
+                    if (imageStream != null) {
+                        Image image = new Image(imageStream);
+                        imageView.setImage(image);
+                    } else {
+                        System.out.println("Error: No se pudo encontrar la imagen en la ruta: " + imagePath);
+                    }
+                } catch (IllegalArgumentException e) {
+                    System.out.println("Error al cargar la imagen: " + imagePath);
+                    e.printStackTrace();
+                }
+
+                imageView.setFitHeight(50); // Ajusta el tamaño de la imagen
+                imageView.setFitWidth(50);
+
+                // Crear un Label con el nombre
+                Label nameLabel = new Label(name);
+
+                // Agregar el ImageView y el Label al HBox
+                hBox.getChildren().addAll(imageView, nameLabel);
+                items.add(hBox);
+            }
+
+            // Llenar el ListView con los HBox
+            listView.setItems(items);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Actualiza el VBox de la derecha con la información del item seleccionado
+private void updateRightVBox(Item item) throws IOException {
+    // Cargar la imagen
+    try (InputStream imageStream = getClass().getClassLoader().getResourceAsStream(item.imagePath)) {
+        if (imageStream != null) {
+            Image image = new Image(imageStream);
+            imageView.setImage(image);
+        } else {
+            System.out.println("Error: No se pudo encontrar la imagen en la ruta: " + item.imagePath);
+        }
+    } catch (IllegalArgumentException e) {
+        System.out.println("Error al cargar la imagen: " + item.imagePath);
+        e.printStackTrace();
+    }
+
+    // Actualizar el título
+    titleLabel.setText(item.name);
+
+    // Crear la descripción basada en el tipo de JSON que tenemos
+    StringBuilder description = new StringBuilder();
+
+    // Cargar el JSON para obtener información adicional
+    String jsonFilePath = getJSONFilePathForCategory(choiceBox.getValue());
+    try (BufferedReader reader = new BufferedReader(new FileReader(jsonFilePath))) {
+        StringBuilder jsonContent = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            jsonContent.append(line);
+        }
+
+        // Convertir el contenido a JSONArray para buscar el item
+        JSONArray jsonArray = new JSONArray(jsonContent.toString());
+        for (int i = 0; i < jsonArray.length(); i++) {
+            JSONObject jsonObject = jsonArray.getJSONObject(i);
+            if (jsonObject.getString("nom").equals(item.name)) {
+                // Determinar el tipo de objeto y agregar la información relevante
+                if (jsonObject.has("procesador")) {
+                    // Es una consola
+                    description.append("Procesador: ").append(jsonObject.getString("procesador"))
+                               .append("\nColor: ").append(jsonObject.getString("color"))
+                               .append("\nVendidos: ").append(jsonObject.getInt("venudes"))
+                               .append("\nFecha de lanzamiento: ").append(jsonObject.getString("data"));
+                } else if (jsonObject.has("any")) {
+                    // Es un juego
+                    description.append("Año: ").append(jsonObject.getInt("any"))
+                               .append("\nTipo: ").append(jsonObject.getString("tipus"))
+                               .append("\nDescripción: ").append(jsonObject.getString("descripcio"));
+                } else if (jsonObject.has("nom_del_videojoc")) {
+                    // Es un personaje
+                    description.append("Color: ").append(jsonObject.getString("color"))
+                               .append("\nJuego: ").append(jsonObject.getString("nom_del_videojoc"));
+                }
+                break; // Salir del bucle una vez encontrado el item
+            }
+        }
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+
+    // Actualizar el descriptionLabel con toda la información
+    descriptionLabel.setText(description.toString());
+}
+
+
+    // Obtener la ruta del archivo JSON según la categoría seleccionada
+    private String getJSONFilePathForCategory(String category) {
+        switch (category) {
+            case "Consolas":
+                return "src/main/resources/assets/data/consoles.json";
+            case "Juegos":
+                return "src/main/resources/assets/data/jocs.json";
+            case "Personajes":
+                return "src/main/resources/assets/data/personatges.json";
+            default:
+                return null;
+        }
     }
 }
